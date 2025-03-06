@@ -140,7 +140,7 @@ void sendMsgToAllClientsBut(int excluded, char *s, size_t len) {
         /* Important: we don't do ANY BUFFERING. We just use the kernel
          * socket buffers. If the content does not fit, we don't care.
          * This is needed in order to keep this program simple. */
-        write(Chat->clients[j]->fd,s,len);
+        write(Chat->clients[j]->fd, s, len);
     }
 }
 

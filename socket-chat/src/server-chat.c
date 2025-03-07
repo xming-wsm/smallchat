@@ -3,13 +3,12 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/socket.h>
+#include <sys/select.h>
 #include <arpa/inet.h>
 #include <errno.h>
+#include "libChat.h"
 
-#define SERVER_ADDR_STR     "127.0.0.0"
-#define SERVER_PORT         9009
-#define MAX_CLIENT_NUM      50
-#define MAX_MSG_LEN         1024
+
 
 void perror_exit(const char* str) {
     perror(str);
@@ -18,64 +17,69 @@ void perror_exit(const char* str) {
 
 
 int main(int argc, char** argv) {
-    /* Struct [sockaddr_in] Init*/
-    struct sockaddr_in server_addr;
-    memset(&server_addr, 0, sizeof(server_addr));
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(SERVER_PORT);
-
-    /* Convert IP string to binary form in network bit order automatically */
-    if (!inet_pton(AF_INET, SERVER_ADDR_STR, &server_addr.sin_addr)) {
-        perror_exit("Valid IPv4 Address\n");
-    } else {
-        fprintf(stdout, "Setting Server IP %s::%d\n",
-            inet_ntoa(server_addr.sin_addr), ntohs(server_addr.sin_port));
+    if (argc != 2) {
+        fprintf(stderr, "Usage: <prog> <Inet Port>\n");
+        exit(EXIT_FAILURE);
     }
+    int port = atoi(argv[1]);
 
-    /* Socket Init */
-    int server_sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    if (server_sockfd == -1) {
-        perror_exit("Socket()");
-    }
+    /* init server */
+    chat_server s;
+    server_init(&s, port);
 
-    if (bind(server_sockfd, (struct sockaddr*)&server_addr, sizeof(server_addr)) == -1) {
-        close(server_sockfd);
-        perror_exit("bind(): ");
-    }
+    /* Call select() to monitor fd */
+    fd_set rd_sockfd_set;
+    struct timeval tv;
+    int ret;
 
-    if (listen(server_sockfd, MAX_CLIENT_NUM) == -1) {
-        close(server_sockfd);
-        perror_exit("listen(): ");
-    }
+    while (1) {
+        FD_ZERO(&rd_sockfd_set);
+        /* 遍历 Server 的 Clients 数组，将描述符添加到 rd_socked_set 中 */
+        FD_SET(s.sockfd, &rd_sockfd_set);
 
-    char* rx_msg = malloc(sizeof(char) * MAX_MSG_LEN);
-    struct sockaddr_in client_addr;
-    socklen_t client_len;
-
-    // while (1) {
-        /* call accept(), waiting for client connect */
-        int client_sockfd = accept(server_sockfd, (struct sockaddr*)&client_addr, &client_len);
-        if (client_sockfd == -1) {
-            perror("accept() ");
-            // break;
+        for (int i = 0; i < s.max_client_sockfd; i ++) {
+            if (s.clients[i].sockfd == 0) {
+                continue;
+            } else {
+                FD_SET(s.clients[i].sockfd, &rd_sockfd_set);
+            }
         }
 
-        /* Blocking, wait for client message */
-        ssize_t rx_n = read(client_sockfd, rx_msg, sizeof(char) * MAX_MSG_LEN);
-        if (rx_n == -1) {
-            perror("read() ");
-            // break;
+        /* wait up to five seconds */
+        tv.tv_sec = 5;
+        tv.tv_usec = 0;
+        ret = select(s.max_client_sockfd + 1, &rd_sockfd_set, NULL, NULL, &tv);
+
+        /* check return value */
+        if (ret == -1) {
+            perror("select(): ");
+        } else if (ret) {
+            /* check server socket first */
+            if (FD_ISSET(s.sockfd, &rd_sockfd_set)) {
+                /* 说明有client发送了连接请求 */
+                struct sockaddr_in client_ip_addr;
+                socketfd_t client_sockfd;
+                client_sockfd = tcp_server_accept(s.sockfd, &client_ip_addr);
+                server_add_client(&s, client_sockfd, client_ip_addr);
+            }
+
+            /* 遍历剩余的文件描述符， */
+            for (int i = 0; i < s.max_client_sockfd; i ++) {
+                if (FD_ISSET(i, &rd_sockfd_set)) {
+                    char rx_msg[MAX_MSG_LEN]; 
+                    ssize_t rx_n = read(s.clients[i].sockfd, rx_msg, MAX_MSG_LEN);
+                    printf("%s%s", s.clients[i].name, rx_msg);
+                }
+            }
+        } else {
+            fprintf(stdout, "Time out!\n");
         }
-        printf("Receive from Client(Port:%d): %s",
-            ntohs(client_addr.sin_port), rx_msg);
+        
+    }
+    
+    
 
-        char* tx_msg = "Server> OKOK!";
-        ssize_t tx_n = write(client_sockfd, tx_msg, strlen(tx_msg));
-        close(client_sockfd);
-    // }
 
-    fprintf(stdout, "Close Server!\n");
-    free(rx_msg);
-    close(server_sockfd);
-    return 0;
+
+    return EXIT_SUCCESS;
 }

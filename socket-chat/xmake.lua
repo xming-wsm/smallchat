@@ -4,11 +4,13 @@ set_languages("c99")
 target("server-chat")
     set_kind("binary")
     add_files("src/server-chat.c")
+    add_files("src/libChat.c")
 
+    add_includedirs("src/")
 
-target("client-chat")
-    set_kind("binary")
-    add_files("src/client-chat.c")
+-- target("client-chat")
+--     set_kind("binary")
+--     add_files("src/client-chat.c")
 
 
 --

@@ -3,6 +3,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/socket.h>
+#include <sys/select.h>
 #include <arpa/inet.h>
 #include <errno.h>
 
@@ -35,7 +36,6 @@ int main(int argc, char** argv) {
     if (server_sockfd == -1) {
         perror_exit("Socket()");
     }
-
 
     /* Call connect() */
     if (connect(server_sockfd, (struct sockaddr*)&server_addr, sizeof(server_addr)) == -1) {
